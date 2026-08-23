@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Appointment</title>
+<link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+<header class="topbar">
+  <h1>🏥 Clinic Portal <span class="badge">Doctor</span></h1>
+  <div class="nav-links">
+    <a href="dashboard.html">Dashboard</a>
+    <a href="#" onclick="logout()">Log out</a>
+  </div>
+</header>
+<main>
+  <div id="content"><p class="muted">Loading…</p></div>
+</main>
+
+<script src="../js/api.js"></script>
+<script>
+  Auth.requireRole('doctor');
+  const id = new URLSearchParams(window.location.search).get('id');
+  let apptData = null;
+
+  async function load() {
+    const el = document.getElementById('content');
+    try {
+      apptData = await api(`/appointments/${id}`);
+      render();
+    } catch (err) {
+      el.innerHTML = `<p class="error">${err.message}</p>`;
+    }
+  }
+
+  function render() {
+    const a = apptData;
+    const el = document.getElementById('content');
+    let html = `
+      <div class="card">
+        <h2>${a.patient_name || 'Patient'} <span class="pill ${a.status}">${a.status}</span></h2>
+        <p class="muted">${fmtDateTime(a.slot_start)}</p>
+        ${a.status === 'confirmed' ? `<button class="danger" id="cancelBtn">Cancel appointment</button>` : ''}
+      </div>`;
+
+    if (a.symptomForm) {
+      const s = a.symptomForm.llm_summary || {};
+      html += `
+      <div class="card">
+        <h2>AI Pre-visit Summary</h2>
+        ${s.urgency ? `<p>Urgency: <span class="pill urgency-${s.urgency.toLowerCase()}">${s.urgency}</span></p>` : ''}
+        ${s.chief_complaint ? `<p><strong>Chief complaint:</strong> ${s.chief_complaint}</p>` : ''}
+        ${(s.suggested_questions && s.suggested_questions.length) ? `
+          <p><strong>Suggested questions:</strong></p>
+          <ul>${s.suggested_questions.map((q) => `<li>${q}</li>`).join('')}</ul>` : ''}
+        ${a.symptomForm.llm_status === 'failed' ? `<p class="muted">⚠️ AI summary unavailable — showing raw patient input below.</p>` : ''}
+        <p class="muted"><strong>Raw symptoms:</strong> ${a.symptomForm.raw_symptoms}
+          (${a.symptomForm.duration_days ?? '?'} day(s), self-rated: ${a.symptomForm.severity_patient_reported || 'n/a'})</p>
+      </div>`;
+    }
+
+    if (a.visitNotes) {
+      html += `
+      <div class="card">
+        <h2>Post-visit notes (submitted)</h2>
+        <p>${a.visitNotes.clinical_notes}</p>
+        <p class="muted">Prescription: ${JSON.stringify(a.visitNotes.prescription)}</p>
+      </div>`;
+    } else if (a.status === 'confirmed' || a.status === 'completed') {
+      html += `
+      <div class="card">
+        <h2>Submit post-visit notes</h2>
+        <label>Clinical notes</label>
+        <textarea id="clinicalNotes" placeholder="Diagnosis, observations, advice given..."></textarea>
+        <h3 style="margin-top:16px;font-size:14px;">Prescription</h3>
+        <div id="rxRows"></div>
+        <button class="secondary" id="addRxBtn" type="button">+ Add medicine</button>
+        <br/>
+        <button id="submitNotesBtn">Submit &amp; send patient summary</button>
+        <p class="error" id="notesError"></p>
+      </div>`;
+    }
+
+    el.innerHTML = html;
+
+    const cancelBtn = document.getElementById('cancelBtn');
+    if (cancelBtn) cancelBtn.onclick = cancelAppt;
+
+    if (!a.visitNotes && (a.status === 'confirmed' || a.status === 'completed')) {
+      addRxRow();
+      document.getElementById('addRxBtn').onclick = addRxRow;
+      document.getElementById('submitNotesBtn').onclick = submitNotes;
+    }
+  }
+
+  function addRxRow() {
+    const wrap = document.getElementById('rxRows');
+    const row = document.createElement('div');
+    row.className = 'rx-row';
+    row.innerHTML = `
+      <input placeholder="Drug name" class="rx-drug" />
+      <input placeholder="Dosage e.g. 500mg" class="rx-dosage" />
+      <input placeholder="Times/day" type="number" min="1" class="rx-freq" value="1" />
+      <input placeholder="Days" type="number" min="1" class="rx-days" value="3" />
+      <button class="secondary" type="button" onclick="this.parentElement.remove()">✕</button>`;
+    wrap.appendChild(row);
+  }
+
+  async function submitNotes() {
+    const errEl = document.getElementById('notesError');
+    errEl.textContent = '';
+    const clinical_notes = document.getElementById('clinicalNotes').value.trim();
+    if (!clinical_notes) { errEl.textContent = 'Please enter clinical notes.'; return; }
+
+    const prescription = Array.from(document.querySelectorAll('.rx-row')).map((row) => ({
+      drug: row.querySelector('.rx-drug').value.trim(),
+      dosage: row.querySelector('.rx-dosage').value.trim(),
+      frequency_per_day: Number(row.querySelector('.rx-freq').value) || 1,
+      duration_days: Number(row.querySelector('.rx-days').value) || 1,
+    })).filter((r) => r.drug);
+
+    try {
+      await api(`/visit-notes/${id}`, { method: 'POST', body: { clinical_notes, prescription } });
+      await load();
+    } catch (err) {
+      errEl.textContent = err.message;
+    }
+  }
+
+  async function cancelAppt() {
+    if (!confirm('Cancel this appointment?')) return;
+    try {
+      await api(`/appointments/${id}/cancel`, { method: 'POST' });
+      load();
+    } catch (err) { alert(err.message); }
+  }
+
+  load();
+</script>
+</body>
+</html>

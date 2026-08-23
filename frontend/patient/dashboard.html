@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Patient Dashboard</title>
+<link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+<header class="topbar">
+  <h1>🏥 Clinic Portal <span class="badge">Patient</span></h1>
+  <div class="nav-links">
+    <a href="book.html">Book appointment</a>
+    <a href="#" id="calendarLink">Connect Google Calendar</a>
+    <a href="#" onclick="logout()">Log out</a>
+  </div>
+</header>
+<main>
+  <div class="card">
+    <h2>Welcome, <span id="userName"></span></h2>
+    <p class="muted">Manage your upcoming and past appointments below.</p>
+  </div>
+
+  <div class="card">
+    <h2>My appointments</h2>
+    <div id="apptList"><p class="muted">Loading…</p></div>
+  </div>
+</main>
+
+<script src="../js/api.js"></script>
+<script>
+  const user = Auth.requireRole('patient');
+  document.getElementById('userName').textContent = user.name;
+
+  document.getElementById('calendarLink').onclick = async (e) => {
+    e.preventDefault();
+    try {
+      const { url } = await api('/calendar/connect');
+      window.open(url, '_blank');
+    } catch (err) { alert(err.message); }
+  };
+
+  async function loadAppointments() {
+    const el = document.getElementById('apptList');
+    try {
+      const rows = await api('/appointments/mine');
+      if (rows.length === 0) { el.innerHTML = '<p class="muted">No appointments yet. <a href="book.html">Book one</a>.</p>'; return; }
+      el.innerHTML = rows.map(renderRow).join('');
+      rows.forEach((r) => {
+        const btn = document.getElementById('cancel-' + r.id);
+        if (btn) btn.onclick = () => cancelAppt(r.id);
+        const viewBtn = document.getElementById('view-' + r.id);
+        if (viewBtn) viewBtn.onclick = () => window.location.href = `appointment.html?id=${r.id}`;
+      });
+    } catch (err) {
+      el.innerHTML = `<p class="error">${err.message}</p>`;
+    }
+  }
+
+  function renderRow(r) {
+    const cancellable = r.status === 'confirmed' || r.status === 'held';
+    return `
+      <div class="appt-row">
+        <div>
+          <strong>Dr. ${r.doctor_name}</strong> — ${r.specialisation}<br/>
+          <span class="muted">${fmtDateTime(r.slot_start)}</span>
+        </div>
+        <div>
+          <span class="pill ${r.status}">${r.status}</span>
+          <button class="secondary" id="view-${r.id}">View</button>
+          ${cancellable ? `<button class="danger" id="cancel-${r.id}">Cancel</button>` : ''}
+        </div>
+      </div>`;
+  }
+
+  async function cancelAppt(id) {
+    if (!confirm('Cancel this appointment?')) return;
+    try {
+      await api(`/appointments/${id}/cancel`, { method: 'POST' });
+      loadAppointments();
+    } catch (err) { alert(err.message); }
+  }
+
+  loadAppointments();
+</script>
+</body>
+</html>

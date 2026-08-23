@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Clinic Portal - Login</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<header class="topbar">
+  <h1>🏥 Clinic Appointment Manager</h1>
+</header>
+<main style="max-width:440px;">
+  <div class="card">
+    <div class="tab-bar">
+      <button id="tabLogin" class="active">Log in</button>
+      <button id="tabRegister">Register (Patient)</button>
+    </div>
+
+    <div id="loginForm">
+      <label>Email</label>
+      <input id="loginEmail" type="email" placeholder="you@example.com" />
+      <label>Password</label>
+      <input id="loginPassword" type="password" placeholder="••••••••" />
+      <button id="loginBtn" style="width:100%">Log in</button>
+      <p class="error" id="loginError"></p>
+      <p class="muted" style="margin-top:16px;">
+        Demo accounts (after running <code>npm run seed</code>):<br />
+        Admin: admin@clinic.example.com / Admin@123<br />
+        Doctor: anita.rao@clinic.example.com / Doctor@123<br />
+        Patient: ravi.kumar@example.com / Patient@123
+      </p>
+    </div>
+
+    <div id="registerForm" style="display:none;">
+      <label>Full name</label>
+      <input id="regName" placeholder="Jane Doe" />
+      <label>Email</label>
+      <input id="regEmail" type="email" placeholder="you@example.com" />
+      <label>Phone</label>
+      <input id="regPhone" placeholder="9876543210" />
+      <label>Password</label>
+      <input id="regPassword" type="password" placeholder="At least 6 characters" />
+      <button id="registerBtn" style="width:100%">Create account</button>
+      <p class="error" id="registerError"></p>
+    </div>
+  </div>
+</main>
+
+<script src="js/api.js"></script>
+<script>
+  const tabLogin = document.getElementById('tabLogin');
+  const tabRegister = document.getElementById('tabRegister');
+  const loginForm = document.getElementById('loginForm');
+  const registerForm = document.getElementById('registerForm');
+
+  tabLogin.onclick = () => {
+    tabLogin.classList.add('active'); tabRegister.classList.remove('active');
+    loginForm.style.display = 'block'; registerForm.style.display = 'none';
+  };
+  tabRegister.onclick = () => {
+    tabRegister.classList.add('active'); tabLogin.classList.remove('active');
+    registerForm.style.display = 'block'; loginForm.style.display = 'none';
+  };
+
+  function routeForRole(role) {
+    if (role === 'patient') return 'patient/dashboard.html';
+    if (role === 'doctor') return 'doctor/dashboard.html';
+    if (role === 'admin') return 'admin/dashboard.html';
+    return 'index.html';
+  }
+
+  document.getElementById('loginBtn').onclick = async () => {
+    const email = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    const errEl = document.getElementById('loginError');
+    errEl.textContent = '';
+    try {
+      const data = await api('/auth/login', { method: 'POST', body: { email, password }, auth: false });
+      Auth.setSession(data.token, data.user);
+      window.location.href = routeForRole(data.user.role);
+    } catch (e) {
+      errEl.textContent = e.message;
+    }
+  };
+
+  document.getElementById('registerBtn').onclick = async () => {
+    const name = document.getElementById('regName').value.trim();
+    const email = document.getElementById('regEmail').value.trim();
+    const phone = document.getElementById('regPhone').value.trim();
+    const password = document.getElementById('regPassword').value;
+    const errEl = document.getElementById('registerError');
+    errEl.textContent = '';
+    try {
+      const data = await api('/auth/register', { method: 'POST', body: { name, email, phone, password }, auth: false });
+      Auth.setSession(data.token, data.user);
+      window.location.href = routeForRole(data.user.role);
+    } catch (e) {
+      errEl.textContent = e.message;
+    }
+  };
+
+  // If already logged in, skip straight to the right dashboard.
+  const existing = Auth.getUser();
+  if (existing) window.location.href = routeForRole(existing.role);
+</script>
+</body>
+</html>

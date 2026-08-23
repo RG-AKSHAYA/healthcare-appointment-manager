@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Doctor Dashboard</title>
+<link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+<header class="topbar">
+  <h1>🏥 Clinic Portal <span class="badge">Doctor</span></h1>
+  <div class="nav-links">
+    <a href="#" id="calendarLink">Connect Google Calendar</a>
+    <a href="#" onclick="logout()">Log out</a>
+  </div>
+</header>
+<main>
+  <div class="card">
+    <h2>Welcome, Dr. <span id="userName"></span></h2>
+    <p class="muted">Appointments are sorted with the most recent first. Click one to see the AI pre-visit summary and submit post-visit notes.</p>
+  </div>
+
+  <div class="card">
+    <div class="tab-bar">
+      <button class="filterBtn active" data-f="upcoming">Upcoming</button>
+      <button class="filterBtn" data-f="completed">Completed</button>
+      <button class="filterBtn" data-f="all">All</button>
+    </div>
+    <div id="apptList"><p class="muted">Loading…</p></div>
+  </div>
+</main>
+
+<script src="../js/api.js"></script>
+<script>
+  const user = Auth.requireRole('doctor');
+  document.getElementById('userName').textContent = user.name;
+
+  document.getElementById('calendarLink').onclick = async (e) => {
+    e.preventDefault();
+    try {
+      const { url } = await api('/calendar/connect');
+      window.open(url, '_blank');
+    } catch (err) { alert(err.message); }
+  };
+
+  let allAppts = [];
+  let filter = 'upcoming';
+
+  document.querySelectorAll('.filterBtn').forEach((b) => {
+    b.onclick = () => {
+      document.querySelectorAll('.filterBtn').forEach((x) => x.classList.remove('active'));
+      b.classList.add('active');
+      filter = b.dataset.f;
+      render();
+    };
+  });
+
+  async function load() {
+    try {
+      allAppts = await api('/appointments/mine');
+      render();
+    } catch (err) {
+      document.getElementById('apptList').innerHTML = `<p class="error">${err.message}</p>`;
+    }
+  }
+
+  function render() {
+    const el = document.getElementById('apptList');
+    let rows = allAppts;
+    if (filter === 'upcoming') rows = rows.filter((r) => r.status === 'confirmed');
+    if (filter === 'completed') rows = rows.filter((r) => r.status === 'completed');
+    if (rows.length === 0) { el.innerHTML = '<p class="muted">No appointments here.</p>'; return; }
+    el.innerHTML = rows.map((r) => `
+      <div class="appt-row">
+        <div>
+          <strong>${r.patient_name}</strong><br/>
+          <span class="muted">${fmtDateTime(r.slot_start)}</span>
+        </div>
+        <div>
+          <span class="pill ${r.status}">${r.status}</span>
+          <button onclick="window.location.href='appointment.html?id=${r.id}'">Open</button>
+        </div>
+      </div>`).join('');
+  }
+
+  load();
+</script>
+</body>
+</html>

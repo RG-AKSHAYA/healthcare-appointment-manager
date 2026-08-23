@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Admin Dashboard</title>
+<link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+<header class="topbar">
+  <h1>🏥 Clinic Portal <span class="badge">Admin</span></h1>
+  <div class="nav-links"><a href="#" onclick="logout()">Log out</a></div>
+</header>
+<main>
+  <div class="card">
+    <h2>Add a doctor</h2>
+    <div class="grid-2">
+      <div>
+        <label>Full name</label>
+        <input id="dName" placeholder="Anita Rao" />
+        <label>Email</label>
+        <input id="dEmail" type="email" placeholder="doctor@clinic.example.com" />
+        <label>Phone</label>
+        <input id="dPhone" placeholder="9876543210" />
+        <label>Temporary password</label>
+        <input id="dPassword" placeholder="At least 6 characters" />
+      </div>
+      <div>
+        <label>Specialisation</label>
+        <input id="dSpec" placeholder="Cardiology" />
+        <label>Slot duration (minutes)</label>
+        <input id="dSlotDuration" type="number" value="20" />
+        <label>Working days</label>
+        <div id="workingDays"></div>
+        <label>Working hours (applied to all selected days)</label>
+        <div style="display:flex;gap:8px;">
+          <input id="whStart" type="time" value="09:00" />
+          <input id="whEnd" type="time" value="17:00" />
+        </div>
+      </div>
+    </div>
+    <button id="addDoctorBtn">Add doctor</button>
+    <p class="error" id="addDoctorError"></p>
+    <p class="success" id="addDoctorSuccess"></p>
+  </div>
+
+  <div class="card">
+    <h2>Doctors</h2>
+    <div id="doctorList"><p class="muted">Loading…</p></div>
+  </div>
+
+  <div class="card" id="leaveCard" style="display:none;">
+    <h2>Mark leave for <span id="leaveDoctorName"></span></h2>
+    <label>Date</label>
+    <input type="date" id="leaveDate" />
+    <label>Reason (optional)</label>
+    <input id="leaveReason" placeholder="Conference, personal leave, etc." />
+    <button id="submitLeaveBtn">Mark leave &amp; notify affected patients</button>
+    <p class="muted" id="leaveResult"></p>
+  </div>
+</main>
+
+<script src="../js/api.js"></script>
+<script>
+  Auth.requireRole('admin');
+  const DAYS = [['mon','Mon'],['tue','Tue'],['wed','Wed'],['thu','Thu'],['fri','Fri'],['sat','Sat'],['sun','Sun']];
+  document.getElementById('workingDays').innerHTML = DAYS.map(([k, label]) =>
+    `<label style="display:inline-block;width:auto;margin-right:10px;"><input type="checkbox" class="dayChk" value="${k}" ${['mon','tue','wed','thu','fri'].includes(k) ? 'checked' : ''}/> ${label}</label>`
+  ).join('');
+
+  let leaveDoctorId = null;
+
+  document.getElementById('addDoctorBtn').onclick = async () => {
+    const errEl = document.getElementById('addDoctorError');
+    const okEl = document.getElementById('addDoctorSuccess');
+    errEl.textContent = ''; okEl.textContent = '';
+
+    const days = Array.from(document.querySelectorAll('.dayChk:checked')).map((c) => c.value);
+    const start = document.getElementById('whStart').value;
+    const end = document.getElementById('whEnd').value;
+    const working_hours = {};
+    DAYS.forEach(([k]) => { working_hours[k] = days.includes(k) ? [[start, end]] : []; });
+
+    try {
+      await api('/admin/doctors', {
+        method: 'POST',
+        body: {
+          name: document.getElementById('dName').value.trim(),
+          email: document.getElementById('dEmail').value.trim(),
+          phone: document.getElementById('dPhone').value.trim(),
+          password: document.getElementById('dPassword').value,
+          specialisation: document.getElementById('dSpec').value.trim(),
+          slot_duration_minutes: Number(document.getElementById('dSlotDuration').value) || 20,
+          working_hours,
+        },
+      });
+      okEl.textContent = 'Doctor added.';
+      loadDoctors();
+    } catch (err) {
+      errEl.textContent = err.message;
+    }
+  };
+
+  async function loadDoctors() {
+    const el = document.getElementById('doctorList');
+    try {
+      const rows = await api('/admin/doctors');
+      if (rows.length === 0) { el.innerHTML = '<p class="muted">No doctors yet.</p>'; return; }
+      el.innerHTML = rows.map((d) => `
+        <div class="appt-row">
+          <div><strong>Dr. ${d.name}</strong> — ${d.specialisation}<br/><span class="muted">${d.email} · ${d.slot_duration_minutes}-min slots</span></div>
+          <button class="secondary" onclick="openLeave('${d.id}', 'Dr. ${d.name}')">Mark leave</button>
+        </div>`).join('');
+    } catch (err) {
+      el.innerHTML = `<p class="error">${err.message}</p>`;
+    }
+  }
+
+  function openLeave(doctorId, name) {
+    leaveDoctorId = doctorId;
+    document.getElementById('leaveDoctorName').textContent = name;
+    document.getElementById('leaveCard').style.display = 'block';
+    document.getElementById('leaveResult').textContent = '';
+    document.getElementById('leaveCard').scrollIntoView({ behavior: 'smooth' });
+  }
+
+  document.getElementById('submitLeaveBtn').onclick = async () => {
+    const date = document.getElementById('leaveDate').value;
+    const reason = document.getElementById('leaveReason').value.trim();
+    const resultEl = document.getElementById('leaveResult');
+    if (!date) { resultEl.textContent = 'Please choose a date.'; return; }
+    try {
+      const res = await api(`/admin/doctors/${leaveDoctorId}/leave`, { method: 'POST', body: { date, reason } });
+      resultEl.textContent = `Leave recorded. ${res.cancelledAppointments} affected appointment(s) cancelled and patients notified by email.`;
+    } catch (err) {
+      resultEl.textContent = err.message;
+    }
+  };
+
+  loadDoctors();
+</script>
+</body>
+</html>

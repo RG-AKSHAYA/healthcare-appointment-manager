@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Book Appointment</title>
+<link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+<header class="topbar">
+  <h1>🏥 Clinic Portal <span class="badge">Patient</span></h1>
+  <div class="nav-links">
+    <a href="dashboard.html">My appointments</a>
+    <a href="#" onclick="logout()">Log out</a>
+  </div>
+</header>
+<main>
+  <!-- Step 1: search doctor -->
+  <div class="card" id="step1">
+    <h2>Step 1 — Find a doctor</h2>
+    <label>Specialisation (leave blank to see all)</label>
+    <input id="specInput" placeholder="e.g. General Medicine, Cardiology" />
+    <button id="searchBtn">Search</button>
+    <div id="doctorList" style="margin-top:14px;"></div>
+  </div>
+
+  <!-- Step 2: pick date + slot -->
+  <div class="card" id="step2" style="display:none;">
+    <h2>Step 2 — Pick a date &amp; time</h2>
+    <p class="muted" id="chosenDoctorLabel"></p>
+    <label>Date</label>
+    <input type="date" id="dateInput" />
+    <div id="slotArea"></div>
+  </div>
+
+  <!-- Step 3: symptom form -->
+  <div class="card" id="step3" style="display:none;">
+    <h2>Step 3 — Tell us your symptoms</h2>
+    <p class="muted">This slot is held for you for a few minutes while you complete this form.</p>
+    <label>Describe your symptoms</label>
+    <textarea id="symptoms" placeholder="e.g. Fever and headache for 2 days, mild cough"></textarea>
+    <div class="grid-2">
+      <div>
+        <label>How many days have you had these symptoms?</label>
+        <input type="number" id="durationDays" min="0" />
+      </div>
+      <div>
+        <label>Self-rated severity</label>
+        <select id="severity">
+          <option value="mild">Mild</option>
+          <option value="moderate" selected>Moderate</option>
+          <option value="severe">Severe</option>
+        </select>
+      </div>
+    </div>
+    <button id="confirmBtn">Confirm appointment</button>
+    <p class="error" id="confirmError"></p>
+  </div>
+
+  <!-- Step 4: success -->
+  <div class="card" id="step4" style="display:none;">
+    <h2>✅ Appointment confirmed</h2>
+    <div id="successBox"></div>
+    <button onclick="window.location.href='dashboard.html'">Go to my appointments</button>
+  </div>
+</main>
+
+<script src="../js/api.js"></script>
+<script>
+  Auth.requireRole('patient');
+  let selectedDoctor = null;
+  let selectedSlot = null;
+  let appointmentId = null;
+
+  document.getElementById('searchBtn').onclick = searchDoctors;
+  searchDoctors();
+
+  async function searchDoctors() {
+    const spec = document.getElementById('specInput').value.trim();
+    const el = document.getElementById('doctorList');
+    el.innerHTML = '<p class="muted">Searching…</p>';
+    try {
+      const rows = await api(`/doctors${spec ? '?specialisation=' + encodeURIComponent(spec) : ''}`);
+      if (rows.length === 0) { el.innerHTML = '<p class="muted">No doctors found.</p>'; return; }
+      el.innerHTML = rows.map((d) => `
+        <div class="appt-row">
+          <div><strong>Dr. ${d.name}</strong> — ${d.specialisation}<br/><span class="muted">${d.bio || ''}</span></div>
+          <button id="pick-${d.doctorId}">Select</button>
+        </div>`).join('');
+      rows.forEach((d) => {
+        document.getElementById('pick-' + d.doctorId).onclick = () => selectDoctor(d);
+      });
+    } catch (err) {
+      el.innerHTML = `<p class="error">${err.message}</p>`;
+    }
+  }
+
+  function selectDoctor(d) {
+    selectedDoctor = d;
+    document.getElementById('chosenDoctorLabel').textContent = `Dr. ${d.name} — ${d.specialisation}`;
+    document.getElementById('step2').style.display = 'block';
+    document.getElementById('step2').scrollIntoView({ behavior: 'smooth' });
+    const dateInput = document.getElementById('dateInput');
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    dateInput.value = tomorrow;
+    dateInput.min = new Date().toISOString().slice(0, 10);
+    dateInput.onchange = loadSlots;
+    loadSlots();
+  }
+
+  async function loadSlots() {
+    const date = document.getElementById('dateInput').value;
+    const el = document.getElementById('slotArea');
+    el.innerHTML = '<p class="muted">Loading slots…</p>';
+    try {
+      const result = await api(`/doctors/${selectedDoctor.doctorId}/slots?date=${date}`);
+      if (result.onLeave) { el.innerHTML = '<p class="error">Doctor is on leave this day. Please pick another date.</p>'; return; }
+      if (result.slots.length === 0) { el.innerHTML = '<p class="muted">No slots available this day.</p>'; return; }
+      el.innerHTML = '<div class="slot-grid">' + result.slots.map((s) =>
+        `<button class="slot-btn" data-start="${s.start}" data-end="${s.end}">${fmtTime(s.start)}</button>`
+      ).join('') + '</div>';
+      el.querySelectorAll('.slot-btn').forEach((btn) => {
+        btn.onclick = () => pickSlot(btn);
+      });
+    } catch (err) {
+      el.innerHTML = `<p class="error">${err.message}</p>`;
+    }
+  }
+
+  async function pickSlot(btn) {
+    document.querySelectorAll('.slot-btn').forEach((b) => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    selectedSlot = { start: btn.dataset.start, end: btn.dataset.end };
+    try {
+      const hold = await api('/appointments/hold', {
+        method: 'POST',
+        body: { doctorId: selectedDoctor.doctorId, slotStart: selectedSlot.start, slotEnd: selectedSlot.end },
+      });
+      appointmentId = hold.appointmentId;
+      document.getElementById('step3').style.display = 'block';
+      document.getElementById('step3').scrollIntoView({ behavior: 'smooth' });
+    } catch (err) {
+      alert(err.message);
+      loadSlots();
+    }
+  }
+
+  document.getElementById('confirmBtn').onclick = async () => {
+    const symptoms = document.getElementById('symptoms').value.trim();
+    const errEl = document.getElementById('confirmError');
+    errEl.textContent = '';
+    if (!symptoms) { errEl.textContent = 'Please describe your symptoms.'; return; }
+    try {
+      const data = await api(`/appointments/${appointmentId}/confirm`, {
+        method: 'POST',
+        body: {
+          symptoms,
+          duration_days: Number(document.getElementById('durationDays').value) || null,
+          severity: document.getElementById('severity').value,
+        },
+      });
+      document.getElementById('step1').style.display = 'none';
+      document.getElementById('step2').style.display = 'none';
+      document.getElementById('step3').style.display = 'none';
+      document.getElementById('step4').style.display = 'block';
+      document.getElementById('successBox').innerHTML = `
+        <p>Your appointment with <strong>Dr. ${selectedDoctor.name}</strong> is confirmed for
+        <strong>${fmtDateTime(data.appointment.slot_start)}</strong>.</p>
+        <p class="muted">A confirmation email and calendar invite have been sent. We've also shared an AI-generated
+        pre-visit summary with your doctor so they can prepare.</p>`;
+    } catch (err) {
+      errEl.textContent = err.message;
+    }
+  };
+</script>
+</body>
+</html>

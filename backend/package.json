@@ -1,0 +1,29 @@
+{
+  "name": "healthcare-appointment-backend",
+  "version": "1.0.0",
+  "description": "Healthcare Appointment & Follow-up Manager - Backend API",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "seed": "node src/db/seed.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "express": "^4.19.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "nodemailer": "^6.9.14",
+    "node-cron": "^3.0.3",
+    "googleapis": "^140.0.1",
+    "express-validator": "^7.2.0",
+    "uuid": "^9.0.1",
+    "axios": "^1.7.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}
