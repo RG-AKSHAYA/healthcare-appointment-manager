@@ -60,6 +60,9 @@ it at a different backend (e.g. after deploying), set `window.API_BASE` before
 
 ## 2. Deploying
 
+🔗 **Live app:** https://healthcare-appointment-manager.netlify.app
+🔗 **Live backend API:** https://healthcare-appointment-manager-2qf7.onrender.com/api
+
 **Backend** (Render / Railway / Fly.io / any Node host):
 - Set the build command to `npm install` and start command to `npm start`.
 - Set all environment variables from `.env.example` in the host's dashboard.
